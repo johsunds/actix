@@ -521,16 +521,19 @@ where
         let this = self.get_mut();
         let inner = &mut this.inner.borrow_mut();
 
-        // ensure sink is ready to receive next item
-        match Pin::new(&mut inner.sink).poll_ready(cx) {
-            Poll::Ready(Ok(())) => {
-                if let Some(item) = inner.buffer.pop_front() {
-                    // send front of buffer to sink
-                    let _ = Pin::new(&mut inner.sink).start_send(item);
+        // FIX: https://github.com/actix/actix/issues/431
+        while let Poll::Ready(res) = Pin::new(&mut inner.sink).poll_ready(cx) {
+            match res {
+                Ok(()) => {
+                    if let Some(item) = inner.buffer.pop_front() {
+                        // send front of buffer to sink
+                        let _ = Pin::new(&mut inner.sink).start_send(item);
+                    } else {
+                        break;
+                    }
                 }
+                Err(_err) => {}
             }
-            Poll::Ready(Err(_err)) => {}
-            Poll::Pending => {}
         }
 
         if !inner.closing_flag.contains(Flags::CLOSING) {
